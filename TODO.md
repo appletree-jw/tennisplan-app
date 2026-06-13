@@ -11,20 +11,27 @@
 - [x] Supabase 프로젝트 생성
 - [x] React 앱 초기화 (CRA 또는 Vite)
 
-## Step 2. DB 마이그레이션 ⬜
-**인증/권한 테이블**
-- [ ] `users` (id, username, password(bcrypt), name, gender, is_active, created_at)
-- [ ] `roles` (id, name, description)
-- [ ] `user_roles` (user_id, role_id, granted_at) — 다대다 매핑
-- [ ] `permissions` (id, action)
-- [ ] `role_permissions` (role_id, permission_id)
+## Step 2. DB 마이그레이션 🟡 (SQL 작성 완료, 실행 대기)
+> `supabase/migrations/` 에 SQL 작성 완료. Supabase 키 연결 후 실행 필요.
 
-**경기 관련 테이블**
-- [ ] `sessions` (id, date, total_slots, created_by, created_at)
-- [ ] `matches` (id, session_id, slot_no, court, match_type, team_a[], team_b[], created_at)
-- [ ] `scores` (id, match_id, score_a, score_b, winner, recorded_by)
-- [ ] `summary_stats` (user_id, total_games, wins, losses, win_rate, by_type(jsonb), recent_10(jsonb), updated_at)
-- [ ] 초기 권한 데이터 시드 (draw:read/create/update, score:write, stats:read, member:manage)
+**인증/권한 테이블** — `0001_auth_rbac.sql` ✅ 작성
+- [x] `users` (id, username, password, name, gender, is_active, created_at)
+- [x] `roles` (id, name, description)
+- [x] `user_roles` (user_id, role_id, granted_at) — 다대다 매핑
+- [x] `permissions` (id, action)
+- [x] `role_permissions` (role_id, permission_id)
+
+**경기 관련 테이블** — `0002_match_tables.sql` ✅ 작성
+- [x] `sessions` (id, date, total_slots, created_by, created_at)
+- [x] `matches` (id, session_id, slot_no, court, match_type, team_a[], team_b[], created_at)
+- [x] `scores` (id, match_id, score_a, score_b, winner, recorded_by)
+- [x] `summary_stats` (user_id, total_games, wins, losses, win_rate, by_type(jsonb), recent_10(jsonb), updated_at)
+- [x] 권한 데이터 시드 — `0003_seed_roles_permissions.sql` ✅ 작성
+
+**남은 작업**
+- [ ] Supabase 프로젝트 키를 `.env.local` 에 설정
+- [ ] 마이그레이션 실제 실행 (대시보드 SQL Editor 또는 `supabase db push`)
+- [ ] `users.password` vs Supabase Auth 인증 방식 결정 (supabase/README.md 참고)
 
 ## Step 3. 인증 구현 ⬜ (우선순위 2)
 - [ ] 회원가입 (아이디·비번·이름·성별)
