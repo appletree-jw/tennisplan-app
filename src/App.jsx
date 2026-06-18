@@ -1,121 +1,66 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
+import { Routes, Route, Link } from 'react-router-dom'
+import { AuthProvider, useAuth } from './lib/auth.jsx'
+import DrawPage from './pages/DrawPage.jsx'
+import SessionDetailPage from './pages/SessionDetailPage.jsx'
+import SessionsPage from './pages/SessionsPage.jsx'
+import StatsPage from './pages/StatsPage.jsx'
+import AdminPage from './pages/AdminPage.jsx'
+import ProfilePage from './pages/ProfilePage.jsx'
+import LoginPage from './pages/LoginPage.jsx'
+import SignupPage from './pages/SignupPage.jsx'
 import './App.css'
 
-function App() {
-  const [count, setCount] = useState(0)
-
+function NavBar() {
+  const { isLoggedIn, profile, signOut, hasPermission } = useAuth()
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+    <header className="topbar">
+      <Link to="/" className="brand">
+        🎾 테니스 대진표
+      </Link>
+      <nav className="nav">
+        {isLoggedIn ? (
+          <>
+            {hasPermission('draw:create') && <Link to="/">대진 추가</Link>}
+            <Link to="/sessions">대진표 목록</Link>
+            <Link to="/stats">통계</Link>
+            {hasPermission('member:manage') && <Link to="/admin">관리자</Link>}
+            <Link to="/profile" className="nav-user">{profile?.name || profile?.username || '회원'}님</Link>
+            <button type="button" className="link-btn" onClick={signOut}>
+              로그아웃
+            </button>
+          </>
+        ) : (
+          <>
+            <Link to="/login">로그인</Link>
+            <Link to="/signup">회원가입</Link>
+          </>
+        )}
+      </nav>
+    </header>
+  )
+}
 
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+function App() {
+  return (
+    <AuthProvider>
+      <div className="app">
+        <NavBar />
+        <main>
+          <Routes>
+            <Route path="/" element={<DrawPage />} />
+            <Route path="/draw/:id" element={<SessionDetailPage />} />
+            {/* 구 링크 호환: 스코어 입력도 통합 상세 화면으로 */}
+            <Route path="/session/:id/scores" element={<SessionDetailPage />} />
+            <Route path="/sessions" element={<SessionsPage />} />
+            <Route path="/stats" element={<StatsPage />} />
+            <Route path="/admin" element={<AdminPage />} />
+            <Route path="/profile" element={<ProfilePage />} />
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/signup" element={<SignupPage />} />
+          </Routes>
+        </main>
+      </div>
+    </AuthProvider>
   )
 }
 

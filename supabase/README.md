@@ -26,9 +26,8 @@ npx supabase db push
 | `0002_match_tables.sql` | sessions / matches / scores / summary_stats |
 | `0003_seed_roles_permissions.sql` | 역할·권한 기본 데이터 (RBAC 매트릭스) |
 
-## ⚠️ 설계 확인 필요 (TODO.md 참고)
-`users` 테이블에 `password` 컬럼이 있는데, 기술스택은 **Supabase Auth** 사용입니다.
-- **방식 1:** Supabase Auth(`auth.users`)로 인증 → 이 `users`는 프로필 테이블로만 사용, `password` 컬럼 제거
-- **방식 2:** 자체 인증 → `password`에 bcrypt 해시 저장
-
-둘 중 하나로 정해야 합니다. (Step 3 인증 구현 전 결정 권장)
+## ✅ 인증 방식 (결정 완료, 2026-06-14)
+**Supabase Auth** 사용으로 일원화.
+- 인증·비밀번호·세션(JWT)은 `auth.users` 가 관리.
+- `public.users` 는 **프로필 전용 테이블** — `id` 가 `auth.users(id)` 를 1:1 참조하며 `password` 컬럼은 제거됨.
+- 회원가입: `supabase.auth.signUp()` → 성공 시 `users` 에 프로필 행 삽입(username/name/gender).

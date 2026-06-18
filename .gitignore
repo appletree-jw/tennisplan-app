@@ -12,6 +12,15 @@ dist
 dist-ssr
 *.local
 
+# 세션 대화 백업 (원본 transcript — 용량 큼, 커밋 제외. README 는 추적)
+docs/sessions/*.jsonl
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

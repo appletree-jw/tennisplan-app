@@ -11,11 +11,12 @@ exception
   when duplicate_object then null;
 end $$;
 
--- 클럽원
+-- 클럽원 프로필
+-- 인증 방식: Supabase Auth (auth.users) — 이 테이블은 프로필 전용.
+-- id 는 auth.users.id 를 그대로 사용(1:1). 비밀번호/세션은 Supabase Auth 가 관리.
 create table if not exists users (
-  id          uuid primary key default gen_random_uuid(),
-  username    varchar unique not null,          -- 로그인 아이디
-  password    varchar,                           -- bcrypt hash (Supabase Auth 사용 시 NULL 가능)
+  id          uuid primary key references auth.users(id) on delete cascade,
+  username    varchar unique not null,          -- 로그인/표시용 아이디
   name        varchar not null,                  -- 대진표 표시 이름
   gender      gender_enum,
   is_active   boolean not null default true,
