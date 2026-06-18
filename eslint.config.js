@@ -18,4 +18,9 @@ export default defineConfig([
       parserOptions: { ecmaFeatures: { jsx: true } },
     },
   },
+  {
+    // Vercel serverless 함수는 Node 런타임 (process 등)
+    files: ['api/**/*.js'],
+    languageOptions: { globals: globals.node },
+  },
 ])
