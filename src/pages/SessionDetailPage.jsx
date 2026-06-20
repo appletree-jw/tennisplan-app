@@ -248,8 +248,21 @@ export default function SessionDetailPage() {
   }
 
   async function handleSaveImage() {
-    if (!captureRef.current) return
-    const dataUrl = await toPng(captureRef.current, { pixelRatio: 2, backgroundColor: '#181b22' })
+    const node = captureRef.current
+    if (!node) return
+    // .capture 는 모바일에서 overflow-x:auto 라 보이는 영역만 찍힌다.
+    // 실제 콘텐츠 전체 크기(scrollWidth/Height)로 캡처해 전체 대진이 한 장에 나오게 한다.
+    const width = node.scrollWidth
+    const height = node.scrollHeight
+    const dataUrl = await toPng(node, {
+      pixelRatio: 2,
+      backgroundColor: '#181b22',
+      width,
+      height,
+      style: { overflow: 'visible', width: `${width}px`, height: `${height}px` },
+      // 대진만: 스코어 입력칸/버튼/승자(.score-entry)는 이미지에서 제외
+      filter: (el) => !(el.classList && el.classList.contains('score-entry')),
+    })
     const link = document.createElement('a')
     link.download = `대진표_${draw?.date || id}.png`
     link.href = dataUrl
