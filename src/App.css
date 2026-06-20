@@ -728,7 +728,7 @@ button.big:hover {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.9rem;
-  min-width: 520px; /* 너무 좁아지면 가로 스크롤 */
+  min-width: 560px; /* 너무 좁아지면 가로 스크롤 (3·4코트 컬럼 확대분 반영) */
 }
 
 .draw-table tbody tr {
@@ -750,6 +750,14 @@ button.big:hover {
 .draw-table th {
   background: var(--panel-2);
   font-weight: 600;
+}
+
+/* 3코트·4코트 컬럼(3·4번째): 선수 이름 개행 방지를 위해 폭 ~10% 확대 */
+.draw-table th:nth-child(3),
+.draw-table th:nth-child(4),
+.draw-table td:nth-child(3),
+.draw-table td:nth-child(4) {
+  min-width: 178px;
 }
 
 .draw-table .slot-no {
