@@ -77,7 +77,9 @@ function MatchCell({ match }) {
         {match.type}
       </span>
       <span className="teams">
-        {match.teamA.join('·')} <em>vs</em> {match.teamB.join('·')}
+        <span className="pair">{match.teamA.join('·')}</span>
+        <em>vs</em>
+        <span className="pair">{match.teamB.join('·')}</span>
       </span>
     </div>
   )

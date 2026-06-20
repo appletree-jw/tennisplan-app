@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth.jsx'
 import { loadSessions } from '../lib/drawService.js'
 
 export default function SessionsPage() {
   const { isLoggedIn } = useAuth()
+  const navigate = useNavigate()
   const [rows, setRows] = useState([])
   const [status, setStatus] = useState('loading')
   const [error, setError] = useState('')
@@ -58,12 +59,16 @@ export default function SessionsPage() {
           </thead>
           <tbody>
             {rows.map((s) => (
-              <tr key={s.id}>
+              <tr
+                key={s.id}
+                className="clickable-row"
+                onClick={() => navigate(`/draw/${s.id}`)}
+              >
                 <td className="pname">{s.date}</td>
                 <td>{s.headcount != null ? `${s.headcount}명` : '—'}</td>
                 <td>{s.total_slots ?? '—'}</td>
                 <td className="session-actions">
-                  <Link to={`/draw/${s.id}`}>보기</Link>
+                  <Link to={`/draw/${s.id}`} onClick={(e) => e.stopPropagation()}>보기</Link>
                 </td>
               </tr>
             ))}

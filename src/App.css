@@ -689,6 +689,14 @@ button.big:hover {
   font-size: 0.85rem;
 }
 
+/* 대진표 목록: 행 전체 클릭으로 진입 (모바일 편의). '보기' 링크는 유지 */
+.stats-table tbody tr.clickable-row {
+  cursor: pointer;
+}
+.stats-table tbody tr.clickable-row:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
 .result-header {
   display: flex;
   flex-wrap: wrap;
@@ -783,10 +791,23 @@ button.big:hover {
   font-weight: 700;
 }
 
+.match .teams {
+  /* 한글 이름이 글자 단위로 쪼개지지 않게 (CJK 기본 줄바꿈 방지) */
+  word-break: keep-all;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 4px;
+}
+
+/* 한 팀(이름·이름)은 절대 중간에서 끊기지 않는 한 덩어리. 좁으면 팀 단위로만 줄바꿈 */
+.match .pair {
+  white-space: nowrap;
+}
+
 .match .teams em {
   color: var(--muted);
   font-style: normal;
-  padding: 0 4px;
 }
 
 /* 경기 칸 내 인라인 스코어 */
