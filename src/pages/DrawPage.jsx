@@ -21,6 +21,10 @@ export default function DrawPage() {
   const [guestGender, setGuestGender] = useState('M')
   const [date, setDate] = useState(todayStr())
   const [startTime, setStartTime] = useState('06:20')
+  // 슬롯 제외 옵션: { [name]: { first:bool, last:bool } } (지각/조퇴)
+  const [slotOpts, setSlotOpts] = useState({})
+  // 잡복 허용 여자 이름 집합 (미선택 시 여자는 혼복·여복으로만 편성)
+  const [jabOk, setJabOk] = useState(() => new Set())
   const [draw, setDraw] = useState(null)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -66,6 +70,51 @@ export default function DrawPage() {
 
   function removeParticipant(target) {
     setParticipants(participants.filter((p) => p.name !== target))
+    setSlotOpts((prev) => {
+      if (!prev[target]) return prev
+      const next = { ...prev }
+      delete next[target]
+      return next
+    })
+    setJabOk((prev) => {
+      if (!prev.has(target)) return prev
+      const next = new Set(prev)
+      next.delete(target)
+      return next
+    })
+  }
+
+  // 잡복 허용 토글 (여자만)
+  function toggleJab(name) {
+    setJabOk((prev) => {
+      const next = new Set(prev)
+      if (next.has(name)) next.delete(name)
+      else next.add(name)
+      return next
+    })
+  }
+
+  // 지각(first)/조퇴(last) 토글 — 같은 값 다시 누르면 해제
+  function toggleSlotOpt(name, which) {
+    setSlotOpts((prev) => {
+      const cur = prev[name] || { first: false, last: false }
+      const next = { ...cur, [which]: !cur[which] }
+      const merged = { ...prev, [name]: next }
+      if (!next.first && !next.last) delete merged[name]
+      return merged
+    })
+  }
+
+  // slotOpts → { first:[names], last:[names] }
+  function buildSlotExclusions() {
+    const first = []
+    const last = []
+    for (const [name, o] of Object.entries(slotOpts)) {
+      if (!selectedNames.has(name)) continue
+      if (o.first) first.push(name)
+      if (o.last) last.push(name)
+    }
+    return first.length || last.length ? { first, last } : undefined
   }
 
   async function handleSaveImage() {
@@ -117,6 +166,11 @@ export default function DrawPage() {
         date,
         startTime,
         seed: reseed ? Math.floor(Math.random() * 0xffffffff) : draw?.seed,
+        slotExclusions: buildSlotExclusions(),
+        // 여자 참석자 중 잡복 허용자만 전달 (빈 배열 = 잡복 금지)
+        jabbokFemales: participants
+          .filter((p) => p.gender === 'F' && jabOk.has(p.name))
+          .map((p) => p.name),
       })
       setDraw(result)
     } catch (err) {
@@ -216,23 +270,61 @@ export default function DrawPage() {
         </div>
 
         {/* 선택된 참석자 */}
-        <div className="section-label">선택된 참석자</div>
+        <div className="section-label">
+          선택된 참석자
+          {participants.length > 0 && (
+            <span className="hint inline">
+              {' '}· 지각/조퇴는 첫·마지막 슬롯 제외 · 잡복은 허용 여자만 (미선택 시 여자는 혼복·여복만)
+            </span>
+          )}
+        </div>
         <ul className="participant-list">
-          {participants.map((p) => (
-            <li key={p.name} className={p.gender === 'F' ? 'female' : 'male'}>
-              <span className="badge">{genderLabel(p.gender)}</span>
-              {p.name}
-              {p.isGuest && <span className="guest-tag">게스트</span>}
-              <button
-                type="button"
-                className="remove"
-                onClick={() => removeParticipant(p.name)}
-                aria-label="삭제"
-              >
-                ×
-              </button>
-            </li>
-          ))}
+          {participants.map((p) => {
+            const opt = slotOpts[p.name] || {}
+            return (
+              <li key={p.name} className={p.gender === 'F' ? 'female' : 'male'}>
+                <span className="badge">{genderLabel(p.gender)}</span>
+                {p.name}
+                {p.isGuest && <span className="guest-tag">게스트</span>}
+                <span className="slot-opts">
+                  <button
+                    type="button"
+                    className={`slot-opt ${opt.first ? 'on' : ''}`}
+                    onClick={() => toggleSlotOpt(p.name, 'first')}
+                    title="첫 슬롯 제외 (지각)"
+                  >
+                    지각
+                  </button>
+                  <button
+                    type="button"
+                    className={`slot-opt ${opt.last ? 'on' : ''}`}
+                    onClick={() => toggleSlotOpt(p.name, 'last')}
+                    title="마지막 슬롯 제외 (조퇴)"
+                  >
+                    조퇴
+                  </button>
+                  {p.gender === 'F' && (
+                    <button
+                      type="button"
+                      className={`slot-opt jab ${jabOk.has(p.name) ? 'on' : ''}`}
+                      onClick={() => toggleJab(p.name)}
+                      title="잡복 허용 (여1+남3 경기에 편성 가능)"
+                    >
+                      잡복
+                    </button>
+                  )}
+                </span>
+                <button
+                  type="button"
+                  className="remove"
+                  onClick={() => removeParticipant(p.name)}
+                  aria-label="삭제"
+                >
+                  ×
+                </button>
+              </li>
+            )
+          })}
           {participants.length === 0 && (
             <li className="empty">클럽원을 선택하거나 게스트를 추가하세요 (최소 4명).</li>
           )}

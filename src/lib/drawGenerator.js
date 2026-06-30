@@ -5,9 +5,19 @@
 // 순수 함수: participants 배열을 받아 슬롯×코트 대진표를 반환한다.
 // DB/네트워크 의존성 없음 → 클라이언트에서 즉시 실행·테스트 가능.
 //
-//   generateDraw({ participants, date, seed }) -> {
-//     date, config, slots: [...], warnings: [...], stats: {...}, score, seed
+//   generateDraw({ participants, date, seed, slotExclusions, jabbokFemales }) -> {
+//     date, config, slots: [...], warnings: [...], stats: {...}, score, seed,
+//     slotExclusions, jabbokFemales
 //   }
+//
+// slotExclusions(선택): { first:[이름…], last:[이름…] }
+//   - first: 첫 슬롯에 편성하지 않을 인원(지각). last: 마지막 슬롯 제외(조퇴).
+//   - 강제 휴식으로 반영하며, 세트 균등은 기존 ±1 규칙을 그대로 유지한다.
+//
+// jabbokFemales(선택): [이름…] — 잡복(여1+남3)에 편성할 수 있는 여자 명단.
+//   - 미지정(undefined): legacy — 모든 여자 잡복 가능(기존 동작).
+//   - 배열 지정: 지정된 여자만 잡복 가능. 빈 배열 = 잡복 금지 → 여자는 혼복·여복만.
+//   - 허용 여자가 없는 슬롯은 뛰는 여자를 짝수로 맞춰 잡복을 회피한다.
 //
 // 하드룰(§3): 세트 균등(±1) > 슬롯 내 중복 금지 > 연속휴식 금지(≤2) > 성비 유형배분
 // 소프트룰(§4): 페어중복 40 / 세트균등 25 / 연속휴식 20 / 코트균등 15
@@ -49,6 +59,11 @@ function shuffle(arr, rng) {
 }
 
 const pairKey = (x, y) => [x, y].sort().join('|')
+
+const EMPTY_SET = new Set()
+
+// 잡복 허용 명단 미지정 시(legacy): 모든 여자가 잡복 가능, 회피는 명단 짝수성 기준.
+const LEGACY_JAB = { mode: 'legacy', eligibleSet: null }
 
 // 4코트가 실제로 한 번이라도 쓰였는지 (1코트 전용 대진 판별)
 function usesBothCourts(courtCount) {
@@ -106,7 +121,7 @@ function pickTypeCombo(f) {
 // 주어진 유형으로 실제 팀 구성 — femalesPool/malesPool에서 소비
 // 반환: { type, teamA:[..], teamB:[..] } 또는 null(인원 부족)
 // ---------------------------------------------------------------------
-function buildMatch(type, females, males, rng) {
+function buildMatch(type, females, males, rng, jabEligible = null) {
   const spec = MATCH_TYPES[type]
   if (females.length < spec.female || males.length < spec.male) return null
   const f = shuffle(females, rng)
@@ -125,10 +140,14 @@ function buildMatch(type, females, males, rng) {
       teamA = [m[0], m[1]]
       teamB = [m[2], m[3]]
       break
-    case '잡복': // (여1남1) vs 남2
-      teamA = [f[0], m[0]]
+    case '잡복': {
+      // (여1남1) vs 남2 — 잡복에는 허용된 여자만 배치
+      const woman = jabEligible ? f.find((w) => jabEligible.has(w)) : f[0]
+      if (!woman) return null // 이 풀에 잡복 허용 여자가 없음 → 불가
+      teamA = [woman, m[0]]
       teamB = [m[1], m[2]]
       break
+    }
     default:
       return null
   }
@@ -146,12 +165,74 @@ function removeUsed(pool, usedSet) {
 }
 
 // ---------------------------------------------------------------------
+// §3-4 / §6 이 슬롯에서 잡복을 회피(=뛰는 여자 짝수화)해야 하는지 판단.
+//  - legacy 모드(잡복 허용 명단 미지정): 명단 전체 여자가 짝수면 회피
+//    (여자 짝수면 잡복 없이 혼복/여복으로 떨어지는 것이 정상).
+//  - allowlist 모드: 뛰는 여자 중 '잡복 허용 여자'가 한 명도 없으면 회피.
+//    (허용 여자가 있으면 홀수일 때 그 사람을 잡복에 배치)
+// ---------------------------------------------------------------------
+function shouldAvoidJab(resting, names, genderOf, jab) {
+  if (jab.mode === 'legacy') {
+    const totalF = names.filter((x) => genderOf[x] === 'F').length
+    return totalF > 0 && totalF % 2 === 0
+  }
+  const restSet = new Set(resting)
+  const eligiblePlaying = names.some(
+    (x) => !restSet.has(x) && genderOf[x] === 'F' && jab.eligibleSet.has(x),
+  )
+  return !eligiblePlaying
+}
+
+// ---------------------------------------------------------------------
+// 뛰는 여자 수를 짝수로 보정 (잡복 강제를 피하기 위함).
+// 휴식 인원 수(restCount)는 유지하고 한 명만 성별을 교체한다.
+// 강제 휴식자(forced)는 교체 대상에서 제외해 슬롯 제외 옵션을 깨지 않는다.
+// ---------------------------------------------------------------------
+function forcePlayingFemalesEven(resting, names, genderOf, restedLast, rng, forced = EMPTY_SET) {
+  const restSet = new Set(resting)
+  const playingF = names.filter((x) => !restSet.has(x) && genderOf[x] === 'F').length
+  if (playingF % 2 === 0) return resting // 이미 짝수
+
+  // 우선책: 쉬는 여자 1명을 뛰게 + 노는 남자 1명을 쉬게 (여자 출전 최대화).
+  const restingWomen = resting.filter((x) => genderOf[x] === 'F' && !forced.has(x))
+  const playingMen = names.filter((x) => !restSet.has(x) && genderOf[x] === 'M')
+  if (restingWomen.length && playingMen.length) {
+    // 연속휴식 안 걸리는 남자 우선
+    const manIn = shuffle(playingMen, rng).sort(
+      (a, b) => (restedLast.has(a) ? 1 : 0) - (restedLast.has(b) ? 1 : 0),
+    )[0]
+    const womanOut = restingWomen[0]
+    return resting.map((x) => (x === womanOut ? manIn : x))
+  }
+  // 대안: 뛰는 여자 1명을 쉬게 + 쉬는 남자 1명을 뛰게.
+  const playingWomen = names.filter((x) => !restSet.has(x) && genderOf[x] === 'F')
+  const restingMen = resting.filter((x) => genderOf[x] === 'M' && !forced.has(x))
+  if (playingWomen.length && restingMen.length) {
+    const womanIn = shuffle(playingWomen, rng)[0]
+    const manOut = restingMen[0]
+    return resting.map((x) => (x === manOut ? womanIn : x))
+  }
+  return resting // 보정 불가 — 그대로
+}
+
+// ---------------------------------------------------------------------
 // 한 번의 대진표 시도 (탐욕 + 랜덤). 하드룰 위반 시 null 반환.
 // ---------------------------------------------------------------------
-function attemptDraw(participants, config, rng, startTime) {
+function attemptDraw(participants, config, rng, startTime, slotExclusions = {}, jab = LEGACY_JAB) {
   const names = participants.map((p) => p.name)
   const genderOf = Object.fromEntries(participants.map((p) => [p.name, p.gender]))
   const n = names.length
+
+  // 슬롯 제외 옵션: 첫 슬롯(지각)·마지막 슬롯(조퇴)에 강제 휴식시킬 인원.
+  const firstOff = new Set(slotExclusions.first || [])
+  const lastOff = new Set(slotExclusions.last || [])
+  const lastIndex = config.slots - 1
+  const forcedRestFor = (s) => {
+    if (s === 0 && s === lastIndex) return new Set([...firstOff, ...lastOff])
+    if (s === 0) return firstOff
+    if (s === lastIndex) return lastOff
+    return EMPTY_SET
+  }
 
   const setsPlayed = Object.fromEntries(names.map((x) => [x, 0]))
   const restedLast = new Set() // 직전 슬롯에 쉰 인원
@@ -169,21 +250,30 @@ function attemptDraw(participants, config, rng, startTime) {
     const restCount = n - playingCount
 
     // --- 휴식자 선택 (§3-3 연속휴식 금지 우선, 그다음 세트 많은 순) ---
+    // 슬롯 제외 옵션으로 강제 휴식할 인원을 먼저 확보한다.
+    const forced = forcedRestFor(s)
+    const forcedList = names.filter((x) => forced.has(x))
+    if (forcedList.length > restCount) return null // 제외 인원이 휴식 정원 초과 → 불가
     let resting = []
     if (restCount > 0) {
-      // 연속휴식 금지: 직전에 쉰 사람은 가급적 제외
-      const eligible = names.filter((x) => !restedLast.has(x))
+      const remainingRest = restCount - forcedList.length
+      // 연속휴식 금지: 직전에 쉰 사람은 가급적 제외 (강제 휴식자는 후보에서 빼둠)
+      const eligible = names.filter((x) => !restedLast.has(x) && !forced.has(x))
       let candidates = eligible.slice()
       // 후보가 부족하면(불가피) restedLast 일부도 다시 쉬게 (≤2 연속 허용)
-      if (candidates.length < restCount) {
-        const extra = names.filter((x) => restedLast.has(x))
+      if (candidates.length < remainingRest) {
+        const extra = names.filter((x) => restedLast.has(x) && !forced.has(x))
         candidates = candidates.concat(extra)
       }
       // 세트 많이 뛴 사람 우선 휴식 + 약간의 랜덤
       candidates = shuffle(candidates, rng).sort(
         (a, b) => setsPlayed[b] - setsPlayed[a],
       )
-      resting = candidates.slice(0, restCount)
+      resting = forcedList.concat(candidates.slice(0, remainingRest))
+      // §3-4/§6 잡복 회피가 필요한 슬롯이면 뛰는 여자를 짝수로 보정
+      if (shouldAvoidJab(resting, names, genderOf, jab)) {
+        resting = forcePlayingFemalesEven(resting, names, genderOf, restedLast, rng, forced)
+      }
       // 2슬롯 연속 휴식 카운트
       for (const r of resting) {
         if (restedLast.has(r)) consecRestViolations++
@@ -212,8 +302,11 @@ function attemptDraw(participants, config, rng, startTime) {
     const fPool = females.slice()
     const mPool = males.slice()
     const matches = []
-    for (const t of types) {
-      const match = buildMatch(t, fPool, mPool, rng)
+    // 잡복을 먼저 구성해 허용 여자를 선점한다(혼복/여복이 허용 여자를 다 써버리는 것 방지).
+    // pickTypeCombo가 상수 배열을 반환할 수 있으므로 복사 후 정렬한다.
+    const buildOrder = types.slice().sort((a, b) => (b === '잡복' ? 1 : 0) - (a === '잡복' ? 1 : 0))
+    for (const t of buildOrder) {
+      const match = buildMatch(t, fPool, mPool, rng, jab.eligibleSet)
       if (!match) return null
       matches.push(match)
     }
@@ -313,8 +406,21 @@ function scoreDraw(d, setTargets) {
 // ---------------------------------------------------------------------
 // 경고 메시지 생성 (§3-1, §3-3, §7, §9 — 불가피한 불균등 명시)
 // ---------------------------------------------------------------------
-function buildWarnings(d) {
+function buildWarnings(d, slotExclusions = { first: [], last: [] }, jab = LEGACY_JAB) {
   const warnings = []
+  if (slotExclusions.first.length) {
+    warnings.push(`첫 슬롯 제외(지각): ${slotExclusions.first.join(', ')} — 첫 경기에 편성하지 않음.`)
+  }
+  if (slotExclusions.last.length) {
+    warnings.push(`마지막 슬롯 제외(조퇴): ${slotExclusions.last.join(', ')} — 마지막 경기에 편성하지 않음.`)
+  }
+  if (jab.mode === 'allowlist') {
+    if (jab.eligibleSet.size) {
+      warnings.push(`잡복 허용 여자: ${[...jab.eligibleSet].join(', ')} — 잡복은 이 인원만 편성됨.`)
+    } else {
+      warnings.push('잡복 허용 여자 미선택 — 여자는 혼복·여복으로만 편성됩니다(잡복 없음).')
+    }
+  }
   const setsVals = Object.values(d.setsPlayed)
   const maxSet = Math.max(...setsVals)
   const minSet = Math.min(...setsVals)
@@ -349,6 +455,8 @@ export function generateDraw({
   seed,
   startTime = START_TIME,
   iterations = MAX_ITERATIONS,
+  slotExclusions,
+  jabbokFemales,
 }) {
   if (!participants || participants.length < 4) {
     throw new Error('대진 생성에는 최소 4명이 필요합니다.')
@@ -365,13 +473,35 @@ export function generateDraw({
   const playerSlotsTotal = courtsUsed * 4 * config.slots
   const setTargets = computeSetTargets(playerSlotsTotal, n)
 
+  // 슬롯 제외 옵션 정규화·검증 (참석자에 없는 이름은 무시)
+  const normExclusions = normalizeSlotExclusions(slotExclusions, nameSet)
+  const restCountPerSlot = n - courtsUsed * 4
+  if (restCountPerSlot === 0 && (normExclusions.first.length || normExclusions.last.length)) {
+    throw new Error(
+      `${n}명은 매 슬롯 전원이 출전하므로(휴식 없음) 슬롯 제외를 적용할 수 없습니다.`,
+    )
+  }
+  if (normExclusions.first.length > restCountPerSlot) {
+    throw new Error(
+      `첫 슬롯 제외 인원(${normExclusions.first.length}명)이 슬롯당 휴식 정원(${restCountPerSlot}명)을 초과합니다.`,
+    )
+  }
+  if (normExclusions.last.length > restCountPerSlot) {
+    throw new Error(
+      `마지막 슬롯 제외 인원(${normExclusions.last.length}명)이 슬롯당 휴식 정원(${restCountPerSlot}명)을 초과합니다.`,
+    )
+  }
+
+  // 잡복 허용 여자 명단 정규화 (미지정 → legacy: 모든 여자 허용)
+  const jab = normalizeJabConfig(jabbokFemales, participants)
+
   const baseSeed = Number.isFinite(seed) ? seed >>> 0 : Math.floor(Math.random() * 0xffffffff)
 
   let best = null
   let bestScore = -Infinity
   for (let i = 0; i < iterations; i++) {
     const rng = makeRng(baseSeed + i)
-    const attempt = attemptDraw(participants, config, rng, startTime)
+    const attempt = attemptDraw(participants, config, rng, startTime, normExclusions, jab)
     if (!attempt) continue
     const sc = scoreDraw(attempt, setTargets)
     if (sc > bestScore) {
@@ -383,10 +513,20 @@ export function generateDraw({
 
   if (!best) {
     throw new Error(
-      '주어진 인원 구성으로 룰을 만족하는 대진을 생성하지 못했습니다. 성비를 확인해 주세요.',
+      '주어진 인원 구성으로 룰을 만족하는 대진을 생성하지 못했습니다. 성비·슬롯 제외·잡복 허용 여자 설정을 확인해 주세요.',
     )
   }
 
+  // §3-1 하드룰: 세트 수 차이가 1을 초과하면 제약(잡복 허용 여자 부족 등)으로 균등 불가.
+  const setsVals = Object.values(best.setsPlayed)
+  if (Math.max(...setsVals) - Math.min(...setsVals) > 1) {
+    throw new Error(
+      '세트 수 균등(§3-1)을 만족하는 대진을 만들지 못했습니다. ' +
+        '잡복 허용 여자를 1명 이상 선택하거나 인원·슬롯 제외 설정을 조정해 주세요.',
+    )
+  }
+
+  const hasExclusions = normExclusions.first.length || normExclusions.last.length
   return {
     date: date || null,
     config: { ...config, startTime },
@@ -396,10 +536,14 @@ export function generateDraw({
       gender: p.gender,
       isGuest: !!p.isGuest,
     })),
+    // 재생성 시 동일 옵션을 유지하기 위해 슬롯 제외 설정 보관
+    slotExclusions: hasExclusions ? normExclusions : null,
+    // 잡복 허용 여자 명단 (allowlist 모드일 때만 보관, legacy면 null)
+    jabbokFemales: jab.mode === 'allowlist' ? [...jab.eligibleSet] : null,
     seed: baseSeed,
     score: bestScore,
     slots: best.slots,
-    warnings: buildWarnings(best),
+    warnings: buildWarnings(best, normExclusions, jab),
     stats: {
       headcount: n,
       setTargets,
@@ -407,4 +551,33 @@ export function generateDraw({
       courtCount: best.courtCount,
     },
   }
+}
+
+// ---------------------------------------------------------------------
+// 슬롯 제외 옵션 정규화 — {first:[names], last:[names]} 형태로 통일.
+// 참석자 명단에 없는 이름은 제거하고 중복도 정리한다.
+// ---------------------------------------------------------------------
+function normalizeSlotExclusions(slotExclusions, nameSet) {
+  const pick = (arr) =>
+    Array.isArray(arr) ? [...new Set(arr.filter((x) => nameSet.has(x)))] : []
+  return {
+    first: pick(slotExclusions?.first),
+    last: pick(slotExclusions?.last),
+  }
+}
+
+// ---------------------------------------------------------------------
+// 잡복 허용 여자 명단 정규화.
+//  - 미지정(undefined/null): legacy 모드 — 모든 여자가 잡복 가능(기존 동작 유지).
+//  - 배열 지정: allowlist 모드 — 지정된 여자 참석자만 잡복 가능(빈 배열 = 잡복 금지).
+// ---------------------------------------------------------------------
+function normalizeJabConfig(jabbokFemales, participants) {
+  if (jabbokFemales === undefined || jabbokFemales === null) return LEGACY_JAB
+  const womenNames = new Set(
+    participants.filter((p) => p.gender === 'F').map((p) => p.name),
+  )
+  const allowed = Array.isArray(jabbokFemales)
+    ? jabbokFemales.filter((name) => womenNames.has(name))
+    : []
+  return { mode: 'allowlist', eligibleSet: new Set(allowed) }
 }

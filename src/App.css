@@ -359,6 +359,46 @@ button.big:hover {
   padding: 1px 5px;
 }
 
+.slot-opts {
+  display: inline-flex;
+  gap: 3px;
+  margin-left: 2px;
+}
+
+.slot-opt {
+  border: 1px solid var(--border);
+  background: none;
+  color: var(--muted);
+  font-size: 0.68rem;
+  border-radius: 6px;
+  padding: 1px 6px;
+  cursor: pointer;
+}
+
+.slot-opt:hover {
+  border-color: var(--accent, #fb8c00);
+}
+
+.slot-opt.on {
+  background: #fb8c00;
+  border-color: #fb8c00;
+  color: #fff;
+}
+
+.slot-opt.jab:hover {
+  border-color: #8e24aa;
+}
+
+.slot-opt.jab.on {
+  background: #8e24aa;
+  border-color: #8e24aa;
+}
+
+.hint.inline {
+  font-weight: normal;
+  font-size: 0.78rem;
+}
+
 .remove {
   border: none;
   background: none;

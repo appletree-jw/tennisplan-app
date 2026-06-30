@@ -169,6 +169,10 @@ export default function SessionDetailPage() {
         date: draw.date,
         startTime: draw.config?.startTime,
         seed: Math.floor(Math.random() * 0xffffffff),
+        // 슬롯 제외 옵션 유지 (풀에서 빠진 이름은 엔진이 자동 무시)
+        slotExclusions: draw.slotExclusions || undefined,
+        // 잡복 허용 여자 명단 유지 (legacy 대진은 undefined → 기존 동작)
+        jabbokFemales: draw.jabbokFemales || undefined,
       })
       await regenerateSession(id, fresh)
       const matches = await loadSessionMatches(id)

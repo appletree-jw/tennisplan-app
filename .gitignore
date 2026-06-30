@@ -31,3 +31,4 @@ docs/sessions/*.jsonl
 *.njsproj
 *.sln
 *.sw?
+.vercel

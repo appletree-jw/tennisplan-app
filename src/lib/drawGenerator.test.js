@@ -132,6 +132,19 @@ describe('§2 경기 유형 구성 검증', () => {
       expect(match.type).toBe('남복')
     }
   })
+
+  it('§3-4 여자 수가 짝수인 명단엔 잡복이 편성되지 않는다', () => {
+    // 여자 한 명이 쉬는 슬롯에서 뛰는 여자가 1명으로 남아 잡복이 새던 버그 회귀 테스트.
+    const evenFemaleRosters = [[6, 2], [11, 2], [8, 4], [9, 4]]
+    for (const [m, f] of evenFemaleRosters) {
+      // 시드를 바꿔가며 여러 대진을 검사 (휴식 분포가 시드마다 달라짐)
+      for (let seed = 1; seed <= 20; seed++) {
+        for (const match of allMatches(gen(m, f, seed))) {
+          expect(match.type, `남${m}여${f} seed=${seed}`).not.toBe('잡복')
+        }
+      }
+    }
+  })
 })
 
 describe('§9 코트 유효성', () => {
@@ -160,6 +173,162 @@ describe('§10 결정론 (시드 재현성)', () => {
       iterations: 800,
     })
     expect(again.slots).toEqual(first.slots)
+  })
+})
+
+describe('슬롯 제외 옵션 (지각·조퇴)', () => {
+  const genX = (m, f, slotExclusions, seed = 1) =>
+    generateDraw({
+      participants: roster(m, f),
+      date: '2026-06-15',
+      seed,
+      iterations: 800,
+      slotExclusions,
+    })
+
+  function playsInSlot(slot, name) {
+    return Object.values(slot.courts).some(
+      (mt) => mt.teamA.includes(name) || mt.teamB.includes(name),
+    )
+  }
+
+  it('첫 슬롯 제외 인원은 첫 슬롯에서 뛰지 않는다', () => {
+    const d = genX(9, 4, { first: ['남1', '여1'] })
+    expect(playsInSlot(d.slots[0], '남1')).toBe(false)
+    expect(playsInSlot(d.slots[0], '여1')).toBe(false)
+    expect(d.slots[0].resting).toEqual(expect.arrayContaining(['남1', '여1']))
+  })
+
+  it('마지막 슬롯 제외 인원은 마지막 슬롯에서 뛰지 않는다', () => {
+    const d = genX(9, 4, { last: ['남2', '여2'] })
+    const lastSlot = d.slots[d.slots.length - 1]
+    expect(playsInSlot(lastSlot, '남2')).toBe(false)
+    expect(playsInSlot(lastSlot, '여2')).toBe(false)
+  })
+
+  it('첫·마지막 동시 제외도 각 슬롯에서 적용된다', () => {
+    const d = genX(10, 3, { first: ['남1'], last: ['남2'] })
+    expect(playsInSlot(d.slots[0], '남1')).toBe(false)
+    expect(playsInSlot(d.slots[d.slots.length - 1], '남2')).toBe(false)
+  })
+
+  it('제외해도 세트 수 차이는 최대 1을 유지한다 (§3-1)', () => {
+    const sets = Object.values(genX(9, 4, { last: ['남1', '남2'] }).stats.setsPlayed)
+    expect(Math.max(...sets) - Math.min(...sets)).toBeLessThanOrEqual(1)
+  })
+
+  it('명단에 없는 이름은 무시한다', () => {
+    const d = genX(9, 4, { first: ['없는사람'] })
+    expect(d.slotExclusions).toBeNull()
+  })
+
+  it('휴식 정원을 초과하는 제외는 에러', () => {
+    // 13명: 2코트(8명) → 슬롯당 휴식 5명. 첫 슬롯 6명 제외 시 불가
+    expect(() => genX(9, 4, { first: ['남1', '남2', '남3', '남4', '남5', '남6'] })).toThrow(
+      /휴식 정원/,
+    )
+  })
+
+  it('전원 출전(휴식 0) 인원에선 제외 불가 에러', () => {
+    // 8명: 2코트 8명 전원 출전, 휴식 없음
+    expect(() => genX(6, 2, { last: ['남1'] })).toThrow(/휴식 없음/)
+  })
+
+  it('제외 옵션은 결과에 보관되어 재현된다', () => {
+    const opts = { first: ['남1'], last: ['여1'] }
+    const d = genX(9, 4, opts)
+    expect(d.slotExclusions).toEqual(opts)
+    const again = generateDraw({
+      participants: roster(9, 4),
+      date: '2026-06-15',
+      seed: d.seed,
+      iterations: 800,
+      slotExclusions: d.slotExclusions,
+    })
+    expect(again.slots).toEqual(d.slots)
+  })
+})
+
+describe('§6 잡복 허용 여자 명단 (allowlist)', () => {
+  const genJ = (m, f, jabbokFemales, seed = 1) =>
+    generateDraw({
+      participants: roster(m, f),
+      date: '2026-06-15',
+      seed,
+      iterations: 1500,
+      jabbokFemales,
+    })
+
+  const jabWomen = (m, f, draw) => {
+    const gm = genderMap(m, f)
+    const women = new Set()
+    for (const match of allMatches(draw)) {
+      if (match.type !== '잡복') continue
+      for (const p of [...match.teamA, ...match.teamB]) {
+        if (gm[p] === 'F') women.add(p)
+      }
+    }
+    return women
+  }
+
+  it('빈 명단 → 잡복이 전혀 편성되지 않는다 (혼복·여복만)', () => {
+    for (let seed = 1; seed <= 15; seed++) {
+      for (const match of allMatches(genJ(10, 3, [], seed))) {
+        expect(match.type, `seed=${seed}`).not.toBe('잡복')
+      }
+    }
+  })
+
+  it('빈 명단 + 여자 4명도 잡복 없이 생성된다 (여복 허용)', () => {
+    const types = new Set(allMatches(genJ(8, 4, [])).map((mt) => mt.type))
+    expect(types.has('잡복')).toBe(false)
+  })
+
+  it('허용 명단의 여자만 잡복에 들어간다', () => {
+    // 여자 3명 중 여1만 잡복 허용 → 잡복에 등장하는 여자는 여1뿐
+    for (let seed = 1; seed <= 15; seed++) {
+      const women = jabWomen(10, 3, genJ(10, 3, ['여1'], seed))
+      for (const w of women) expect(w, `seed=${seed}`).toBe('여1')
+    }
+  })
+
+  it('허용 여자가 있으면 잡복이 실제로 활용된다 (여자 홀수)', () => {
+    // 여러 시드 중 하나라도 잡복이 나오면 OK (홀수 여자는 잡복으로 처리됨)
+    let sawJab = false
+    for (let seed = 1; seed <= 15 && !sawJab; seed++) {
+      sawJab = allMatches(genJ(10, 3, ['여1', '여2', '여3'], seed)).some(
+        (mt) => mt.type === '잡복',
+      )
+    }
+    expect(sawJab).toBe(true)
+  })
+
+  it('명단은 결과에 보관되고 재현된다', () => {
+    const d = genJ(10, 3, ['여1', '여2'])
+    expect(new Set(d.jabbokFemales)).toEqual(new Set(['여1', '여2']))
+    const again = generateDraw({
+      participants: roster(10, 3),
+      date: '2026-06-15',
+      seed: d.seed,
+      iterations: 1500,
+      jabbokFemales: d.jabbokFemales,
+    })
+    expect(again.slots).toEqual(d.slots)
+  })
+
+  it('명단에 없는/남자 이름은 무시한다', () => {
+    const d = genJ(10, 3, ['남1', '없는사람', '여1'])
+    expect(d.jabbokFemales).toEqual(['여1'])
+  })
+
+  it('미지정(legacy)은 기존 동작 유지 — jabbokFemales 보관 안 함', () => {
+    const d = genJ(10, 3, undefined)
+    expect(d.jabbokFemales).toBeNull()
+  })
+
+  it('여자 1명인데 잡복 금지면 편성 불가 → 에러', () => {
+    // 여1은 혼복(여2 필요)·여복(여4)에 들어갈 수 없어 편성 불가
+    expect(() => genJ(9, 1, [])).toThrow(/세트 수 균등|룰/)
   })
 })
 
